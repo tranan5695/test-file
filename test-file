@@ -1,7 +1,37 @@
-cd /media/userdata/certificate/
-rm gw1.crt
-rm gw1.key
-echo -e "-----BEGIN CERTIFICATE-----
+#
+# This script update the new gateway certificate files
+#
+
+GW_CRT_PATH=/media/userdata/certificate/gw1.crt
+GW_CSR_PATH=/media/userdata/certificate/gw1.csr
+GW_KEY_PATH=/media/userdata/certificate/gw1.key
+
+RECOVERY_PATH=/media/recoverydata
+USERDATA_PATH=/media/userdata
+TEMP_USERDATA_PATH=${USERDATA_PATH}/userdata_tmp
+
+# This function print log to dmesg
+LOG () {
+    echo "RENEW_CERT: $1" > /dev/kmsg
+}
+
+LOG "Start script"
+LOG "Current cert expiry date:"
+expiry_date=$(openssl x509 -enddate -noout -in /media/userdata/certificate/gw1.crt)
+LOG "${expiry_date}"
+
+# Skip if the certificate is already up to date
+current_year_expiry=$(openssl x509 -enddate -noout -in /media/userdata/certificate/gw1.crt | cut -d ' ' -f 4)
+if [ "$current_year_expiry" = "2021" ]; then
+    LOG "Start update certificate files"
+else
+    LOG "The certificate is already up to date, ignore run script"
+	exit
+fi
+
+# Renew certificate files
+
+echo "-----BEGIN CERTIFICATE-----
 MIIEdTCCAl2gAwIBAgIGAXt1+8DaMA0GCSqGSIb3DQEBCwUAMFQxCzAJBgNVBAYT
 AlZOMQ4wDAYDVQQIDAVIYW5vaTEOMAwGA1UEBwwFSGFub2kxETAPBgNVBAoMCFZp
 bnNtYXJ0MRIwEAYDVQQLDAlTbWFydGhvbWUwHhcNMjEwODI0MDIyNzE4WhcNMzEw
@@ -26,8 +56,9 @@ oyQzJLHsXpOD1+E4uFZHg1hqIiXEGiyJHA2MybK7Toa+fRkyeQ0OXzhGCKDdE4GU
 Go4FkrBgN+H4Deza9dVQAYsVzupkunFvcZE592hlS+4Ka4B0xCdldiQSiRKyPNd/
 sIswxdI3yjSgDNfH9bx0iE3KFrwr8w/PcFr8sMFl/7NaJZaK/ROA5BgGiM2LwahD
 V11EkqE8JoqIlV8CA3PapTNLU0ysobUZGhoZyZFH4Gc29GZwZjQhg+M=
------END CERTIFICATE-----" >>gw1.crt
-echo -e "-----BEGIN CERTIFICATE REQUEST-----
+-----END CERTIFICATE-----" > ${GW_CRT_PATH}
+
+echo "-----BEGIN CERTIFICATE REQUEST-----
 MIICpDCCAYwCAQAwXzELMAkGA1UEBhMCVk4xEDAOBgNVBAgMB1ZpZXRuYW0xDDAK
 BgNVBAcMA1NDVTERMA8GA1UECgwIVmluc21hcnQxHTAbBgNVBAMMFGd3MDAxMWww
 MDAwMTgwLmxvY2FsMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyl/4
@@ -43,8 +74,9 @@ V5DRiULGCHFRRuiikVNM0AZ1Tuc6yJl0/TttLpTJ2zCCMkP67NjQLtDC2i6wM6pg
 YuXgXrT7jDxQ9ee2y1uBNVChIsTVLpecXRbnIKhbeaQwKMhHKd+Eqqcu72xzjkQf
 6jIqnGQw/3LNkWexeMU+DutxZ21ePEOpcT0vI6xLl92bxcdNods/gNZ16KabBeWt
 snF7eF62O7o=
------END CERTIFICATE REQUEST-----" >>gw1.csr
-echo -e "-----BEGIN RSA PRIVATE KEY-----
+-----END CERTIFICATE REQUEST-----" > ${GW_CSR_PATH}
+
+echo "-----BEGIN RSA PRIVATE KEY-----
 MIIEowIBAAKCAQEAyl/4WA3Xof0fchNIQeYJtRg0y+1xCRStewMiqNky4cSqzbZ0
 FTml/a8IbewjnsT8JrJ4ZK2Fe8x5i6sl/WEZwMZivEOUwfl2jwijJXOgTRbTdW9W
 aeJSiBiJNE+33bBl6QRTQpl6SUhYjlSvjxjYp22v3i8Kvrui9JSmgwluzeI5rEEc
@@ -70,4 +102,57 @@ kqghZjzfDphaArFbGbxlwvIq5XM6Ta9TCpDyHbrUCkI9HkFSeKjKAc+Fuqz9Sa6k
 cOgDNQKBgDcoX2BhFppfq/70QhAKzqRMqc44N0cPSrLoJJRddD13tk9wL8pESgSx
 qC+c1OVOy48lgsZUIBcir6NTAEBouZ6ojcT8YMAjWPHPRyzFjjgO5Qu6Lxi0yTF5
 5/63O4ZlSk5BWagMXLeJGMulZYRdC9DH1yDS2ZVSUKRGQ3TptjF9
------END RSA PRIVATE KEY-----" >>gw1.key
+-----END RSA PRIVATE KEY-----" > ${GW_KEY_PATH}
+
+
+# Add permission
+chmod 664 ${GW_CRT_PATH}
+chmod 664 ${GW_CSR_PATH}
+chmod 664 ${GW_KEY_PATH}
+
+LOG "Add crt files to recovery"
+
+if [ -d "$TEMP_USERDATA_PATH" ]; then rm -rf $TEMP_USERDATA_PATH; fi
+mkdir  ${TEMP_USERDATA_PATH}
+
+LOG "Start extract userdata.tar.gz"
+tar -zxvf ${RECOVERY_PATH}/userdata.tar.gz -C ${TEMP_USERDATA_PATH}
+if [ $? == 0 ]; then
+    LOG "Extract userdata.tar.gz done"
+else
+    LOG "Error: Failed to extract userdata.tar.gz"
+	exit
+fi
+
+LOG "Copy certificate files"
+cp ${GW_CRT_PATH}  ${TEMP_USERDATA_PATH}/certificate/
+cp ${GW_CSR_PATH}  ${TEMP_USERDATA_PATH}/certificate/
+cp ${GW_KEY_PATH}  ${TEMP_USERDATA_PATH}/certificate/
+
+LOG "Start recompress userdata_tmp.tar.gz"
+tar -C ${TEMP_USERDATA_PATH} -czvf ${RECOVERY_PATH}/userdata_tmp.tar.gz .
+if [ $? == 0 ]; then
+    LOG "Recompress userdata_tmp.tar.gz done"
+else
+    LOG "Error: Failed to recompress userdata_tmp.tar.gz"
+	rm -rf ${TEMP_USERDATA_PATH}
+	rm ${RECOVERY_PATH}/userdata_tmp.tar.gz
+	exit
+fi
+
+# Clear temp userdata
+rm -rf ${TEMP_USERDATA_PATH}
+
+# Switch recovery userdata 
+rm ${RECOVERY_PATH}/userdata.tar.gz
+mv ${RECOVERY_PATH}/userdata_tmp.tar.gz ${RECOVERY_PATH}/userdata.tar.gz
+if [ $? != 0 ]; then
+    LOG "Error: rename userdata file failed"
+	exit
+fi
+
+LOG "Update certificate done"
+expiry_date=$(openssl x509 -enddate -noout -in /media/userdata/certificate/gw1.crt)
+LOG "${expiry_date}"
+
+# reboot
